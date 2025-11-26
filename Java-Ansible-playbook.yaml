@@ -1,0 +1,86 @@
+---
+- name: Deploy Java Web Calculator App from GitHub to Tomcat
+  hosts: all
+  become: yes
+
+  vars:
+    app_name: Java-Web-Calculator-App
+    repo_url: "https://github.com/Harinigourishetty/Java-Web-Calculator-App.git"
+    app_dir: /home/ubuntu/{{ app_name }}
+    tomcat_dir: /opt/tomcat
+    tomcat_version: "9.0.112"            # Use a valid release from Apache Tomcat 9
+    war_file: target/webapp-add-0.0.3.war
+
+  tasks:
+    - name: Install JDK, Maven, Git, wget, tar
+      apt:
+        name:
+          - default-jdk
+          - maven
+          - git
+          - wget
+          - tar
+        state: present
+        update_cache: yes
+
+    - name: Ensure Tomcat base directory exists
+      file:
+        path: "{{ tomcat_dir }}"
+        state: directory
+        owner: ubuntu
+        group: ubuntu
+        mode: '0755'
+
+    - name: Download Tomcat
+      get_url:
+        url: "https://downloads.apache.org/tomcat/tomcat-9/v{{ tomcat_version }}/bin/apache-tomcat-{{ tomcat_version }}.tar.gz"
+        dest: "/tmp/apache-tomcat-{{ tomcat_version }}.tar.gz"
+        mode: '0644'
+
+    - name: Extract Tomcat
+      unarchive:
+        src: "/tmp/apache-tomcat-{{ tomcat_version }}.tar.gz"
+        dest: "{{ tomcat_dir }}"
+        remote_src: yes
+        extra_opts: [--strip-components=1]
+
+    - name: Ensure Tomcat webapps directory exists
+      file:
+        path: "{{ tomcat_dir }}/webapps"
+        state: directory
+        owner: ubuntu
+        group: ubuntu
+        mode: '0755'
+
+    - name: Clone GitHub repository
+      git:
+        repo: "{{ repo_url }}"
+        dest: "{{ app_dir }}"
+        version: "main"
+        force: yes
+
+    - name: Build Java application using Maven
+      shell: mvn clean package
+      args:
+        chdir: "{{ app_dir }}"
+      environment:
+        MAVEN_OPTS: "-Xmx512m"
+
+    - name: Stop Tomcat if running
+      shell: "{{ tomcat_dir }}/bin/shutdown.sh || true"
+      args:
+        executable: /bin/bash
+
+    - name: Deploy WAR to Tomcat
+      copy:
+        src: "{{ app_dir }}/{{ war_file }}"
+        dest: "{{ tomcat_dir }}/webapps/webapp-add.war"
+        owner: ubuntu
+        group: ubuntu
+        mode: '0644'
+        remote_src: yes
+
+    - name: Start Tomcat
+      shell: "{{ tomcat_dir }}/bin/startup.sh"
+      args:
+        executable: /bin/bash
